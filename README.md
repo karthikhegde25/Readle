@@ -1,4 +1,6 @@
-# Readle
+<p align="center"><img src="docs/readle-logo.png" alt="Readle logo" width="160"></p>
+
+                                        Readle
 
 <p align="center">
 <a href="https://github.com/karthikhegde25/Readle/releases"><img src="docs/get-it-on-github.png" alt="Get it on GitHub" height="64"></a>
@@ -16,7 +18,7 @@
 
 <p align="center"><sub>Tags: android · kotlin · jetpack-compose · ebook-reader · pdf-reader · epub · cbz · offline · open-source</sub></p>
 
-<p align="center"><img src="docs/readle-logo.png" alt="Readle logo" width="160"></p>
+
 
 An original, offline-first Android reader for **PDF, EPUB, MOBI/AZW, FB2, DOCX, RTF, HTML, Markdown, TXT and CBZ comics**.
 Package: `com.readle.app` · Kotlin · Jetpack Compose (Material 3) · MVVM · Room · DataStore · Storage Access Framework.
@@ -72,16 +74,6 @@ app/src/main/java/com/readle/app
 ```
 
 Room has `exportSchema` on (schemas in `app/schemas`) and no destructive migration.
-
-## Verification status (please read)
-
-This project was written in an environment **without the Android SDK or Maven access**, so the Android layer has **not been compiled or run**. What *was* verified:
-
-- `tools/run-jvm-tests.sh`: compiles the Android-free code (domain, EPUB/TXT engine, design tokens) with Kotlin 2.0.21 and runs **127 JUnit tests**: all pass (library filtering/sorting/scopes, EPUB parsing incl. DRM and malformed input, anchors, MOBI/FB2/DOCX/RTF/HTML/Markdown/CBZ conversion, CSS/HTML injection, search, TTS chunking, contrast ratios, formatters).
-- `tools/webtest.js` (+ `GenPage.kt`): drives the exact generated reader page in headless Chromium with a stub bridge: **91 checks** (position restore, CSP blocking book scripts, selection offsets, highlights across nested elements, find, taps, footer navigation, previous-chapter button, paged layout and page turning, live restyle). Run with `tools/run-web-tests.sh` after `tools/run-jvm-tests.sh`.
-- Static cross-file import resolution for every `com.readle.app` import.
-
-Not verified: Compose UI, ViewModels, WebView glue, PdfRenderer, TTS and SAF on a real device. Expect to fix a handful of compile errors on the first Gradle build; run the CI workflow or `./gradlew :app:assembleDebug` and then test on a device.
 
 ## Third-party data
 
