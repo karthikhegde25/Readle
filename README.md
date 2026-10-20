@@ -1,6 +1,7 @@
 <p align="center"><img src="docs/readle-logo.png" alt="Readle logo" width="160"></p>
 
-                                        Readle
+
+<h1 align="center">Readle</h1>
 
 <p align="center">
 <a href="https://github.com/karthikhegde25/Readle/releases"><img src="docs/get-it-on-github.png" alt="Get it on GitHub" height="64"></a>
