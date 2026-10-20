@@ -1,0 +1,161 @@
+name: Build signed Readle
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed only to attach files to a GitHub Release on v* tags
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Accepts the common spellings of each secret name.
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS || secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Unzips the project zip you placed in the repo root (e.g. Readle.zip) and builds from it.
+      - name: Unzip project
+        id: proj
+        run: |
+          set -euo pipefail
+          ZIP="$(ls -1 ./*.zip 2>/dev/null | head -n1 || true)"
+          if [ -z "$ZIP" ]; then
+            echo "::error::No .zip found in the repository root. Place Readle.zip next to .github/ and push again."
+            exit 1
+          fi
+          echo "Unzipping $ZIP"
+          rm -rf project
+          mkdir -p project
+          unzip -q -o "$ZIP" -d project
+          GRADLEW="$(find project -maxdepth 3 -name gradlew | head -n1)"
+          if [ -z "$GRADLEW" ]; then
+            echo "::error::No gradlew found inside $ZIP"
+            exit 1
+          fi
+          DIR="$(dirname "$GRADLEW")"
+          chmod +x "$GRADLEW"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Project directory: $DIR"
+          ls "$DIR"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # The Android SDK is preinstalled on ubuntu-latest; just make sure licences are accepted
+      # so Gradle can fetch platform 35 / build-tools if they are missing.
+      - name: Accept Android SDK licences
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore release keystore
+        id: ks
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::ANDROID_KEYSTORE secret is not set. The release APK will be UNSIGNED."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          missing=""
+          [ -n "${KEYSTORE_PASSWORD:-}" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -n "${KEY_ALIAS:-}" ]         || missing="$missing ANDROID_KEYSTORE_ALIAS"
+          [ -n "${KEY_PASSWORD:-}" ]      || missing="$missing ANDROID_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::These repository secrets are empty or have a different name:$missing"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/readle-release.jks"
+          echo "Aliases inside your keystore (KEY_ALIAS must match one exactly, case-sensitive):"
+          keytool -list -keystore "$RUNNER_TEMP/readle-release.jks" -storepass "$KEYSTORE_PASSWORD" 2>&1 | grep -iE "PrivateKeyEntry|trustedCertEntry|Your keystore contains|error|password" || true
+          if ! keytool -list -keystore "$RUNNER_TEMP/readle-release.jks" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Alias '$KEY_ALIAS' not found in the keystore, or the keystore password is wrong. See the alias list above."
+            exit 1
+          fi
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/readle-release.jks" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Compute version
+        id: ver
+        run: |
+          # The visible version is always 1.0; versionCode (the run number) still increases so updates install.
+          echo "name=1.0" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Build release APK and AAB (R8 + resource shrinking)
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: >
+          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
+          -PversionCode=${{ github.run_number }}
+          -PversionName=${{ steps.ver.outputs.name }}
+
+      - name: Verify signature and report size
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -name '*.apk' | head -n1)"
+          echo "APK: $APK"
+          ls -l "$APK" | awk '{printf "APK size: %.2f MB\n", $5/1048576}'
+          AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -n1)"
+          ls -l "$AAB" | awk '{printf "AAB size: %.2f MB\n", $5/1048576}'
+          if [ "${{ steps.ks.outputs.signed }}" = "true" ]; then
+            APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)"
+            "$APKSIGNER" verify --verbose --print-certs "$APK"
+          fi
+
+      - name: Collect outputs
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp "$(find app/build/outputs/apk/release -name '*.apk' | head -n1)" "$GITHUB_WORKSPACE/out/Readle-${{ steps.ver.outputs.name }}.apk"
+          cp "$(find app/build/outputs/bundle/release -name '*.aab' | head -n1)" "$GITHUB_WORKSPACE/out/Readle-${{ steps.ver.outputs.name }}.aab"
+          cp app/build/outputs/mapping/release/mapping.txt "$GITHUB_WORKSPACE/out/mapping.txt" || true
+
+      - name: Upload APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: readle-release-${{ steps.ver.outputs.name }}
+          path: |
+            out/*.apk
+            out/*.aab
+          if-no-files-found: error
+
+      # Keep this: it is the only way to read crash stack traces from the obfuscated build.
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-${{ steps.ver.outputs.name }}
+          path: out/mapping.txt
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.apk
+            out/*.aab
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/readle-release.jks"

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-colour silhouette for Android 13+ themed icons: e-reader body, page and text lines. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M38,26 h32 a5,5 0 0 1 5,5 v46 a5,5 0 0 1 -5,5 h-32 a5,5 0 0 1 -5,-5 v-46 a5,5 0 0 1 5,-5 z M40,31 v36 h28 v-36 z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M43,36 h10 v2 h-10 z M43,42 h22 v2 h-22 z M43,47 h22 v2 h-22 z M43,52 h22 v2 h-22 z M43,57 h22 v2 h-22 z M43,62 h14 v2 h-14 z M48,72 h12 v3 h-12 z" />
+</vector>
